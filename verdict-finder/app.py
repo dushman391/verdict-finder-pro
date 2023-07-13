@@ -89,12 +89,16 @@ def generate_video_ids(user_input):
                 st.write(f"Title: {video_info['title']}")
             # Add a checkbox to the third column with a label based on the video title
             with col3:
-                video_selected = st.checkbox('.', key=f"{video_id}", value=False)
+                video_selected = st.checkbox('.', key=f"{video_id}", value=video_id in st.session_state['video_ids'])
                 if video_selected:
-                    video_ids.append(video_info)
+                    st.session_state['video_ids'].append(video_id)
+                    print("selected video",video_id)
+                else:
+                    if video_id in st.session_state['video_ids']:
+                        st.session_state['video_ids'].remove(video_id)
     
     # Return the selected video IDs
-    return [video['video_id'] for video in video_ids]
+    return st.session_state['video_ids']
 
 def get_text_chunks(raw_texts):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100, length_function=len)
@@ -162,13 +166,15 @@ def compile_data():
 
 # Streamlit app code
 def main():
-
     st.title("Verdict Finder Pro")
     product = st.text_input("Enter Amazon Product URL")
-    product_title=""
+    product_title = ""
     if product:
         product_title = scrape_product_data(product)
 
+    # Initialize session state
+    if 'video_ids' not in st.session_state:
+        st.session_state['video_ids'] = [] 
 
     with st.expander("Select YouTube Videos"):
         # Get video ids
@@ -178,17 +184,16 @@ def main():
     if st.button("Compile Data Set"):
         for video_id in final_video_ids:
             generate_transcript(video_id)
-            st.write(f"Transcript for Video ID: {video_id} saved.")
-
+            print(f"Transcript for Video ID: {video_id} saved.")
 
         merge_files()
         vc = compile_data()
 
-        print("Initializing LLM.")
+        st.write("Initializing LLM.")
 
         llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
 
-        print("Initialized LLM. Building prompt")
+        st.write("Initialized LLM. Building prompt")
 
         # Build prompt
         template = """Identify the following items from below context: 
@@ -223,13 +228,6 @@ def main():
         result = qa_chain({"query": question})
 
         st.write(result["result"])
-
-            
-        # query = "What is the product that is being discussed?"
-        # chain = load_qa_chain(OpenAI(temperature=0.1), chain_type="stuff")
-
-        # docs = vc.similarity_search(query)
-        # response = chain.run(input_documents=docs, question=query)
 
 if __name__ == "__main__":
     main()
