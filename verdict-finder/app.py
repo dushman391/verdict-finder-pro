@@ -11,6 +11,7 @@ from langchain.llms import OpenAI
 import streamlit as st
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
+from product_scraper import scrape_product_data
 
 # API KEY for google's youtube API
 API_KEY = googleapikey
@@ -97,19 +98,27 @@ def get_text_chunks(raw_texts):
     chunks = text_splitter.create_documents(raw_texts)
     return chunks
 
+
 def get_vectorstore(chunks, existing_vectorstore=None):
-    if not os.path.exists("faiss_index"):
+    vectorstore_dir = "vectorstore_data"
+
+    if not os.path.exists(vectorstore_dir):
+        os.makedirs(vectorstore_dir)
+
+    vectorstore_file = os.path.join(vectorstore_dir, "vectorstore.faiss")
+
+    if not os.path.exists(vectorstore_file):
         embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-base")
         if existing_vectorstore is None:
-            st.write("Embedding...")
             vectorstore = FAISS.from_documents(chunks, embeddings)
         else:
             vectorstore = existing_vectorstore.append_documents(chunks, embeddings)
-            vectorstore.save_local("faiss_index")
+            vectorstore.save(vectorstore_file)
     else:
-        vectorstore = FAISS.load_local("faiss_index")
+        vectorstore = FAISS.load(vectorstore_file)
 
     return vectorstore
+
 
 def get_conversation_chain(vectorstore):
     llm = ChatOpenAI()
@@ -151,7 +160,9 @@ def compile_data():
 def main():
 
     st.title("Verdict Finder Pro")
-    product = st.text_input("Enter Product")
+    product = st.text_input("Enter Amazon Product URL")
+    if product:
+        product_title = scrape_product_data(product)
 
 
     with st.expander("Select YouTube Videos"):
@@ -159,12 +170,13 @@ def main():
         final_video_ids = []
 
         if product:
-            final_video_ids = generate_video_ids(product)
+            final_video_ids = generate_video_ids(product_title)
 
     if st.button("Compile Data Set"):
         for video_id in final_video_ids:
             generate_transcript(video_id)
             st.write(f"Transcript for Video ID: {video_id} saved.")
+
 
         merge_files()
         vc = compile_data()
