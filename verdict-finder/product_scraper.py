@@ -72,4 +72,5 @@ def scrape_product_data(url):
     file.write("Reviews:" + reviews)
     file.close()
 
+    print("Amazon scrape successful", title)
     return title

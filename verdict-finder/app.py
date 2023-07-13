@@ -4,6 +4,7 @@ from config.apikey import googleapikey,openaiapikey
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, CouldNotRetrieveTranscript
 from googleapiclient.discovery import build
 from langchain.chains.question_answering import load_qa_chain
+from langchain.chat_models import ChatOpenAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.vectorstores import FAISS
@@ -11,7 +12,9 @@ from langchain.llms import OpenAI
 import streamlit as st
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
+from langchain.chains import RetrievalQA
 from product_scraper import scrape_product_data
+from langchain.prompts import PromptTemplate
 
 # API KEY for google's youtube API
 API_KEY = googleapikey
@@ -96,6 +99,7 @@ def generate_video_ids(user_input):
 def get_text_chunks(raw_texts):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100, length_function=len)
     chunks = text_splitter.create_documents(raw_texts)
+    print("Chunking Completed")
     return chunks
 
 
@@ -117,6 +121,7 @@ def get_vectorstore(chunks, existing_vectorstore=None):
     else:
         vectorstore = FAISS.load(vectorstore_file)
 
+    print("Embedding Completed")
     return vectorstore
 
 
@@ -148,7 +153,6 @@ def compile_data():
     with open('combined_data.txt') as j:
         raw_text = j.read()
 
-        st.write("Chunking...")
         chunks = get_text_chunks([raw_text])
 
         
@@ -161,6 +165,7 @@ def main():
 
     st.title("Verdict Finder Pro")
     product = st.text_input("Enter Amazon Product URL")
+    product_title=""
     if product:
         product_title = scrape_product_data(product)
 
@@ -168,9 +173,7 @@ def main():
     with st.expander("Select YouTube Videos"):
         # Get video ids
         final_video_ids = []
-
-        if product:
-            final_video_ids = generate_video_ids(product_title)
+        final_video_ids = generate_video_ids(product_title)
 
     if st.button("Compile Data Set"):
         for video_id in final_video_ids:
@@ -180,17 +183,53 @@ def main():
 
         merge_files()
         vc = compile_data()
-        
 
-        
+        print("Initializing LLM.")
+
+        llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0)
+
+        print("Initialized LLM. Building prompt")
+
+        # Build prompt
+        template = """Identify the following items from below context: 
+        - Sentiment (positive or negative)
+        - Is the reviewer expressing anger? (true or false)
+        - Item purchased by reviewer
+        - Company that made the item
+        - consider the context and generate overall summary which should indicate wether product is worth buying, 
+        indicate positive and negative points 
+        - summarise negative reviews
+        - total number of reviews
+
+        The context is delimited with triple backticks. \
+        Format your response as a JSON object with \
+        "Sentiment", "Anger", "Item", "Brand", "Summary", "Cons", "number of reviews" as the keys.
+        If the information isn't present, use "unknown" \
+        as the value.
+        Make your response as short as possible.
+        Format the Anger value as a boolean.
+        '''{context}'''
+        """
+        QA_CHAIN_PROMPT = PromptTemplate.from_template(template)
+        # Run chain
+        qa_chain = RetrievalQA.from_chain_type(
+            llm,
+            retriever=vc.as_retriever(),
+            return_source_documents=True,
+            chain_type_kwargs={"prompt": QA_CHAIN_PROMPT}
+        )
+        question = ""
+
+        result = qa_chain({"query": question})
+
+        st.write(result["result"])
+
             
-        query = "What is the product that is being discussed?"
-        chain = load_qa_chain(OpenAI(temperature=0.1), chain_type="stuff")
+        # query = "What is the product that is being discussed?"
+        # chain = load_qa_chain(OpenAI(temperature=0.1), chain_type="stuff")
 
-        docs = vc.similarity_search(query)
-        response = chain.run(input_documents=docs, question=query)
-
-        st.write(response)
+        # docs = vc.similarity_search(query)
+        # response = chain.run(input_documents=docs, question=query)
 
 if __name__ == "__main__":
     main()
