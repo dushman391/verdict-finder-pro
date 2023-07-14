@@ -2,6 +2,7 @@ import os
 import json
 from config.apikey import googleapikey,openaiapikey
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, CouldNotRetrieveTranscript
+from googleapiclient.errors import HttpError
 from googleapiclient.discovery import build
 from langchain.chains.question_answering import load_qa_chain
 from langchain.chat_models import ChatOpenAI
@@ -65,7 +66,7 @@ def generate_transcript(video_id):
                 if music_count > 5:
                     return
             transcript += segment['text']
-
+        print("Creating transcript file...")
         with open("transcript.txt", "a+") as opf:
             opf.seek(0)  # Move the file pointer to the beginning
             existing_data = opf.read()
@@ -78,25 +79,27 @@ def generate_transcript(video_id):
         print(f"Transcripts are disabled for Video ID: {video_id}. Skipping...")
     except CouldNotRetrieveTranscript:
         print(f"Transcript in English not available for Video ID: {video_id}. Skipping...")
-
+    except FileNotFoundError:
+        print("transcript.txt file not found. Please check the file path.")
+    except PermissionError:
+        print("Permission denied. Please check the file permissions.")
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
 
 
 def generate_video_ids(user_input):
     # Set up the YouTube Data API client
-    api_key = API_KEY  # Replace with your own API key
-    if api_key:
-        # Perform some action with the API key
-        print("Found Youtube API key:")
-    else:
-        print("OpenAI API key not found.")
-        # st.stop()
+    api_key = API_KEY
+    if not api_key:
+        st.error("YouTube API key not found.")
+
     youtube = build('youtube', 'v3', developerKey=api_key)
 
     # Search for videos based on user input
     search_response = youtube.search().list(
         q=user_input,
         part='id,snippet',
-        maxResults=10,  # Retrieve the top 10 search results
+        maxResults=5,  # Retrieve the top 10 search results
         order='viewCount'  # Sort by view count in descending order
     ).execute()
 
@@ -112,7 +115,6 @@ def generate_video_ids(user_input):
                 'title': search_result['snippet']['title'],
                 'thumbnail_url': search_result['snippet']['thumbnails']['high']['url'],
             }
-            
             # Create a table with three columns, one for the thumbnails, one for the video details, and one for the checkboxes
             col1, col2, col3 = st.columns([1, 1, 1])
             # Add the thumbnail to the first column
@@ -130,7 +132,6 @@ def generate_video_ids(user_input):
                 else:
                     if video_id in st.session_state['video_ids']:
                         st.session_state['video_ids'].remove(video_id)
-    
     # Return the selected video IDs
     return st.session_state['video_ids']
 
@@ -319,7 +320,7 @@ def main():
         # Get video ids using the product title
         final_video_ids = generate_video_ids(product_title)
 
-    if st.button("Compile Data Set"):
+    if st.button("Verdictify!!"):
         
         for video_id in final_video_ids:
             generate_transcript(video_id)
@@ -333,6 +334,8 @@ def main():
         score = ""
         score = "customer_satisfaction " + str(st.session_state['scores']['customer_satisfaction'])
         score += " budget_friendly " + str(st.session_state['scores']['budget_friendly']) + " "
+        score += " brand_reputation " + str(st.session_state['scores']['brand_reputation']) + " "
+        score += " innovation " + str(st.session_state['scores']['innovation']) + " "
         print(score)
 
         print(get_completion("What is 1+1?"))
