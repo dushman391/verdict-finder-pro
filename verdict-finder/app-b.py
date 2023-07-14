@@ -22,6 +22,7 @@ from langchain.prompts import ChatPromptTemplate
 import openai
 
 # API KEY for google's youtube API
+
 API_KEY = googleapikey
 os.environ['OPENAI_API_KEY'] = openaiapikey
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
@@ -83,6 +84,12 @@ def generate_transcript(video_id):
 def generate_video_ids(user_input):
     # Set up the YouTube Data API client
     api_key = API_KEY  # Replace with your own API key
+    if api_key:
+        # Perform some action with the API key
+        print("Found Youtube API key:")
+    else:
+        print("OpenAI API key not found.")
+        # st.stop()
     youtube = build('youtube', 'v3', developerKey=api_key)
 
     # Search for videos based on user input
@@ -203,11 +210,48 @@ def get_completion(prompt, model="gpt-3.5-turbo"):
 def format_text_with_emoji(text, emoji):
     return f"{emoji} {text}"
 
+def add_readme_to_sidebar():
+    # Add content to the sidebar
+    st.sidebar.markdown("# Verdictify")
+
+    # Smaller version of the README content
+    st.sidebar.markdown("🎯 Verdictify helps users make purchasing decisions for products by analyzing YouTube video transcripts and user-defined preferences.")
+
+    st.sidebar.markdown("## Instructions")
+    st.sidebar.markdown("1. Enter an Amazon product URL or product name. 🛍️")
+    st.sidebar.markdown("2. Set your preferences for budget-friendliness, customer satisfaction, brand reputation, and innovation. 💡")
+    st.sidebar.markdown("3. Select YouTube videos related to the product. 📺")
+    st.sidebar.markdown("4. Click the 'Compile Data Set' button to generate transcripts and combine them with product reviews. 🔄")
+    st.sidebar.markdown("5. View the final verdict and analysis provided by the app. ✔️")
+
+    st.sidebar.markdown("Note: Provide the necessary API keys and dependencies as mentioned in the code comments.")
+
+    st.sidebar.markdown("Enjoy using Verdictify to make informed purchasing decisions! 🎉")
+
+
+# def add_api_keys():
+#     youtube_key = os.environ.get("YOUTUBE_API_KEY")
+#     openai_key = os.environ.get("OPENAI_API_KEY")
+
+#     if not youtube_key or not openai_key:
+#         st.sidebar.warning("Please fill in the API keys.")
+#         youtube_key = st.sidebar.text_input("Enter YouTube API Key", key="youtube_key", type="password")
+#         openai_key = st.sidebar.text_input("Enter Open AI API Key", key="openai_key", type="password")
+
+#         if youtube_key and openai_key:
+#             os.environ["YOUTUBE_API_KEY"] = youtube_key
+#             os.environ["OPENAI_API_KEY"] = openai_key
+
+#     return youtube_key, openai_key
+
+
+
 # Streamlit app code
 def main():
     # Title and description
     st.title("🎯 Verdictify: Your Decision Helper")
     st.markdown("Welcome to Verdictify! This site will help you decide whether to buy a product or not.")
+    add_readme_to_sidebar()
 
     # Initialize session state
     if 'video_ids' not in st.session_state:
