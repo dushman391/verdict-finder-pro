@@ -1,6 +1,6 @@
 import os
 import json
-from config.apikey import googleapikey,openaiapikey
+# from config.apikey import googleapikey,openaiapikey
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, CouldNotRetrieveTranscript
 from googleapiclient.discovery import build
 from langchain.chains.question_answering import load_qa_chain
