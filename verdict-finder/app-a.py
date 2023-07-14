@@ -192,13 +192,31 @@ def compile_data():
         vectorstore = get_vectorstore(chunks)
         return vectorstore
 
+def format_text_with_emoji(text, emoji):
+    return f"{emoji} {text}"
+def add_readme_to_sidebar():
+    # Add content to the sidebar
+    st.sidebar.markdown("# Verdictify")
 
+    # Smaller version of the README content
+    st.sidebar.markdown("🎯 Verdictify helps users make purchasing decisions for products by analyzing YouTube video transcripts and user-defined preferences.")
+
+    st.sidebar.markdown("## Instructions")
+    st.sidebar.markdown("1. Enter an Amazon product URL or product name. 🛍️")
+    st.sidebar.markdown("2. Set your preferences for budget-friendliness, customer satisfaction, brand reputation, and innovation. 💡")
+    st.sidebar.markdown("3. Select YouTube videos related to the product. 📺")
+    st.sidebar.markdown("4. Click the 'Compile Data Set' button to generate transcripts and combine them with product reviews. 🔄")
+    st.sidebar.markdown("5. View the final verdict and analysis provided by the app. ✔️")
+
+    st.sidebar.markdown("Note: Provide the necessary API keys and dependencies as mentioned in the code comments.")
+
+    st.sidebar.markdown("Enjoy using Verdictify to make informed purchasing decisions! 🎉")
 # Streamlit app code
 def main():
     # Title and description
     st.title("🎯 Verdictify: Your Decision Helper")
     st.markdown("Welcome to Verdictify! This site will help you decide whether to buy a product or not.")
-
+    add_readme_to_sidebar()
     # Initialize session state
     if 'video_ids' not in st.session_state:
         st.session_state['video_ids'] = []
@@ -208,7 +226,6 @@ def main():
         st.session_state['scores'] = {
             'budget_friendly': 0,
             'customer_satisfaction': 0,
-            'brand_reputation': 0,
             'innovation': 0
         }
 
@@ -247,12 +264,7 @@ def main():
         )
         st.session_state['scores']['customer_satisfaction'] = 0 if customer_satisfaction == "doesn't matter" else 3 if customer_satisfaction == "good to have" else 5
 
-        brand_reputation = st.select_slider(
-            '👍 Brand Reputation',
-            options=["doesn't matter", 'good to have', 'matters the most'],
-            key=3
-        )
-        st.session_state['scores']['brand_reputation'] = 0 if brand_reputation == "doesn't matter" else 3 if brand_reputation == "good to have" else 5
+        
 
         innovation = st.select_slider(
             '💡 Innovation',
@@ -265,31 +277,8 @@ def main():
         # Get video ids using the product title
         final_video_ids = generate_video_ids(product_title)
 
-    if st.button("Compile Data Set"):
+    if st.button("Verdictify!"):
         
-        score = ""
-        score = "customer_satisfaction " + str(st.session_state['scores']['customer_satisfaction'])
-        score += " budget_friendly " + str(st.session_state['scores']['budget_friendly']) + " "
-        print(score)
-
-        template = f"""
-            step 1: Translate the context to english if it is not already in english.
-            step 2: Extract relevant information from the context to give the feedback 
-            to new customers who could be interesting in buying the product 
-            step 3: Use the Scores '{score}' that are basically categories and weights chosen by the user (5 matters most, 3 Good to have,  0 doesn't matter). 
-            For example, when Budget-Friendly is 5, the user is concerned most about the budget friendliness of the product. 
-            For example. when Pricing and Affordability is 5, the user cannot afford products that are highly priced
-            For example. Brand Reputation is 3, the user is things it is good to have a reputed brand but its not his priority. (If the the video transcript doesn't contain this category, don't consider in your overall rating.)
-            step 4: Calculate the verdict by combing the user preferences in the score from step 3 and provide your final verdict whether the user should buy the product or not. It has to be a definitve answer and then give the calculation/inference after that. 
-            step 5: Format your response as a JSON object with 
-            "Sentiment", "Anger", "Item", "Brand","Price", "Positive Reviews", "Negative Reviews", "Key Features", "product fit", "Summary based on Scores", "Final Verdict", "" as the keys.
-            If the information isn't present, use "unknown" 
-            as the value.
-            Make your response as short as possible.
-            Format the Anger value as a boolean.
-        """
-
-        print(template)
         for video_id in final_video_ids:
             generate_transcript(video_id)
             print(f"Transcript for Video ID: {video_id} saved.")
@@ -307,14 +296,35 @@ def main():
         print("Initialized LLM. Building prompt")
         # context = " You are a helpful assistant"
         
-        score = "customer_satisfaction" + str(st.session_state['scores']['customer_satisfaction'])
-        score += "buget_friendly" + str(st.session_state['scores']['customer_satisfaction'])
+        question = ""
+        question = "customer_satisfaction " + str(st.session_state['scores']['customer_satisfaction'])
+        question += " budget_friendly " + str(st.session_state['scores']['budget_friendly']) + " "
+        question += " innovation " + str(st.session_state['scores']['innovation']) + " "
+        print(question)
 
-
-        # Build prompt
         template = """
-                Summrize the product
+            You are a master at suggesting products to customers. Take the context in the angluar brackets to do the following steps:
+            step 1: Translate the context to english if it is not already in english.
+            step 2: Extract relevant information from the context to give the feedback 
+            to new customers who could be interesting in buying the product.
+            step 3: Use the Scores {question} that are basically categories and weights chosen by the user (5 matters most, 3 Good to have,  0 doesn't matter). 
+                    For example, when Budget-Friendly is 5, the user is concerned most about the budget friendliness of the product. 
+                    For example. when customer_satisfaction is 5, the user is looking for more positive reviews of the product.
+                    For example. when innovation is 5, the user is looking for special features and new technology advancements
+            step 4: Calculate the final verdict by combinig the user preferences in the score from step 3
+                    It has to be a definitve answer and then give the calculation/inference for that decision. 
+            Step 5: Assign the sentiment -  positive, negative and netural based on the context.
+            step 5: Format your response as a JSON object with 
+                    "Summary of the product", "Item", "Brand", "Positive Reviews", "Negative Reviews", "Key Features", "Final Verdict" as the keys.                    
+                    Summary of the product : Should contain the summary of the entire context in 100 characters.
+                    Positive Reviews: Extract and display the positive sentiments in 1-2 sentences (from step 5)
+                    Negative Reviews: Extract and display the negative sentiments in 1-2 sentences (from step 5)
+                    Key Features: Should contain all the features describing the product in short phrases.
+                    Final Verdict: Display the final verdict from step 4 in accordance with the user choices. 
+            step 6: Display the final json object.            
+            context: <{context}>
         """
+        # Build prompt
 
         print("Initializing Prompt Template")
         QA_CHAIN_PROMPT = PromptTemplate.from_template(template)
@@ -332,8 +342,22 @@ def main():
         result = qa_chain({"query": question})
 
         print(result["result"])
+        print(type(result["result"]))
         
-        chain = create_structured_output_chain()
+
+        output_dict = json.loads(result["result"])
+    
+        st.balloons()
+        st.header("🎯 The Verdict")
+        st.write(f"**Summary of the product:** {output_dict['Summary of the product']}")
+        st.write(f"**Item:** {output_dict['Item']} 📱")
+        st.write(f"**Brand:** {output_dict['Brand']} 🏷️")
+        st.write(f"**Positive Reviews:** {output_dict['Positive Reviews']} 👍")
+        st.write(f"**Negative Reviews:** {output_dict['Negative Reviews']} 👎")
+        st.write(f"**Key Features:** {output_dict['Key Features']} 🔑")
+        st.subheader("Final Verdict")
+        st.markdown(f"<p style='font-size:20px;'>{format_text_with_emoji(output_dict['Final Verdict'], '✅')} ✔️</p>", unsafe_allow_html=True)
+                
 
         # print("Extracting the response data")
         # response_data = result["result"]
