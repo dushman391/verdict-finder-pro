@@ -1,28 +1,21 @@
 import os
 import json
 # from config.apikey import googleapikey,openaiapikey
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, CouldNotRetrieveTranscript
-from googleapiclient.discovery import build
-from langchain.chains.question_answering import load_qa_chain
+from product_scraper import AmazonProductScraper
 from langchain.chat_models import ChatOpenAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.vectorstores import FAISS
-from langchain.llms import OpenAI
 import streamlit as st
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain.chains import RetrievalQA
-from product_scraper import scrape_product_data
 from langchain.prompts import PromptTemplate
-from langchain.chains.openai_functions import (
-    create_openai_fn_chain,
-    create_structured_output_chain,
-)
+from youtube_transcript import YouTubeTranscriptGenerator
 
 # Add your own keys
-googleapikey = st.secrets[googleapikey]
-openaiapikey = st.secrets[openaikey]
+googleapikey = st.secrets['googleapikey']
+openaiapikey = st.secrets['openaikey']
 # API KEY for google's youtube API
 API_KEY = googleapikey
 
@@ -55,82 +48,6 @@ class Progress:
         if self.progress > self.n:
             self.bar.empty()
         return result
-
-def generate_transcript(video_id):
-    try:
-        transcript = ""
-        tx = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
-        music_count = 0
-
-        for segment in tx:
-            # Ignoring bad transcripts
-            if "[Music]" in segment['text']:
-                music_count += 1
-                if music_count > 5:
-                    return
-            transcript += segment['text']
-
-        with open("transcript.txt", "a+") as opf:
-            opf.seek(0)  # Move the file pointer to the beginning
-            existing_data = opf.read()
-            opf.seek(0)  # Move the file pointer to the beginning
-            opf.truncate()  # Clear the file content
-            opf.write(existing_data + transcript + "\n")  # Write the updated transcript
-
-        return transcript
-    except TranscriptsDisabled:
-        print(f"Transcripts are disabled for Video ID: {video_id}. Skipping...")
-    except CouldNotRetrieveTranscript:
-        print(f"Transcript in English not available for Video ID: {video_id}. Skipping...")
-
-
-
-def generate_video_ids(user_input):
-    # Set up the YouTube Data API client
-    api_key = API_KEY  # Replace with your own API key
-    youtube = build('youtube', 'v3', developerKey=api_key)
-
-    # Search for videos based on user input
-    search_response = youtube.search().list(
-        q=user_input,
-        part='id,snippet',
-        maxResults=10,  # Retrieve the top 10 search results
-        order='viewCount'  # Sort by view count in descending order
-    ).execute()
-
-    # Extract video IDs, URLs, and view counts from the search results
-    video_ids = []
-    for search_result in search_response.get('items', []):
-        if search_result['id'].get('videoId'):
-            video_id = search_result['id']['videoId']
-            video_url = f"https://www.youtube.com/watch?v={video_id}"
-            video_info = {
-                'video_id': video_id,
-                'video_url': video_url,
-                'title': search_result['snippet']['title'],
-                'thumbnail_url': search_result['snippet']['thumbnails']['high']['url'],
-            }
-            
-            # Create a table with three columns, one for the thumbnails, one for the video details, and one for the checkboxes
-            col1, col2, col3 = st.columns([1, 1, 1])
-            # Add the thumbnail to the first column
-            with col1:
-                st.image(video_info['thumbnail_url'], width=100)
-            # Add the video details to the second column
-            with col2:
-                st.write(f"Title: {video_info['title']}")
-            # Add a checkbox to the third column with a label based on the video title
-            with col3:
-                video_selected = st.checkbox('.', key=f"{video_id}", value=video_id in st.session_state['video_ids'])
-                if video_selected:
-                    st.session_state['video_ids'].append(video_id)
-                    print("selected video",video_id)
-                else:
-                    if video_id in st.session_state['video_ids']:
-                        st.session_state['video_ids'].remove(video_id)
-    
-    # Return the selected video IDs
-    return st.session_state['video_ids']
 
 def get_text_chunks(raw_texts):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100, length_function=len)
@@ -173,7 +90,7 @@ def get_conversation_chain(vectorstore):
 
 def merge_files():
     try:
-        with open("transcript.txt", "r") as transcript_file, open("product_reviews.txt", "r") as review_file, open("combined_data.txt", "w") as combined_file:
+        with open("transcripts.txt", "r") as transcript_file, open("product_reviews.txt", "r") as review_file, open("combined_data.txt", "w") as combined_file:
             transcript_content = transcript_file.read()
             review_content = review_file.read()
             combined_file.write(transcript_content + "\n" + review_content)
@@ -238,18 +155,32 @@ def main():
     # Input fields for product URL and name
     col1, col2 = st.columns(2)
     with col1:
-        product = st.text_input("Enter Amazon Product URL")
+        product_url = st.text_input("Enter Amazon Product URL")
     with col2:
         product_name = st.text_input("Enter Product Name")
 
-    # Check if either the product URL or name is provided
-    if product:
-        product_title = st.session_state.get('product_title', "")
-        if not product_title:
-            product_title = scrape_product_data(product)
-            st.session_state['product_title'] = product_title
+    if product_url == "" and product_name == "":
+        st.info("Enter Amazon URL or Product Name")
+    elif product_url:
+        scraper = AmazonProductScraper()
+        with open('product_reviews.txt', "r+") as pr:
+            pr.truncate(0)
+        for i in range(15):
+            try:
+                print(f"Scrape count: {i}")
+                product_title = scraper.scrape_product_data(product_url)
+                break  # If successful, exit the loop
+            except Exception as e:
+                st.error(f"Scraping failed: {str(e)}")
+
+        # When a new URL is searched, the previous data must be wiped
+        scraper.product_data = {}
+
+        # Display the scraped product title
+        st.write("Product Title:", product_title)
     elif product_name:
         product_title = product_name
+
 
     with st.expander("What matters the most to you?"):
         # Select sliders for personalized input
@@ -278,12 +209,19 @@ def main():
 
     with st.expander("Select YouTube Videos"):
         # Get video ids using the product title
-        final_video_ids = generate_video_ids(product_title)
+        if product_title == "":
+            st.info("Enter Amazon URL or Product Name")
+        else:
+            transcript_generator = YouTubeTranscriptGenerator(googleapikey)
+            video_ids = transcript_generator.generate_video_ids(product_title)
 
     if st.button("Verdictify!"):
         
-        for video_id in final_video_ids:
-            generate_transcript(video_id)
+        with open("transcripts.txt", "r+") as t:
+            t.truncate(0)
+
+        for video_id in video_ids:
+            transcript_generator.generate_transcript(video_id)
             print(f"Transcript for Video ID: {video_id} saved.")
         progress = Progress(number_of_functions=2)
 
