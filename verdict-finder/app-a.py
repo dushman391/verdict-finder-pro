@@ -21,8 +21,8 @@ from langchain.chains.openai_functions import (
 )
 
 # Add your own keys
-googleapikey = "1234"
-openaiapike = "12345"
+googleapikey = st.secrets[googleapikey]
+openaiapikey = st.secrets[openaikey]
 # API KEY for google's youtube API
 API_KEY = googleapikey
 
